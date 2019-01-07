@@ -83,11 +83,14 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
             add_action( 'init', array($plugin, 'register_taxonomies') );
             add_action( 'init', array($plugin, 'register_year_archive') );
             add_action( 'pre_get_posts', array($plugin, 'add_year_query') );
+            add_filter( 'query_vars', array($plugin, 'register_year_vars') );
+            add_filter( 'post_type_link', array($plugin, 'add_year_permalink'), 1, 2 );
             add_action( 'add_meta_boxes_' . $plugin->post_type, array($plugin, 'create_meta_boxes') );
             add_action( 'save_post_' . $plugin->post_type, array($plugin, 'save_date_meta_box') );
             add_action( 'save_post_' . $plugin->post_type, array($plugin, 'save_speakers_meta_box') );
-            add_filter( 'query_vars', array($plugin, 'register_year_vars') );
-            add_filter( 'post_type_link', array($plugin, 'add_year_permalink'), 1, 2 );
+            add_filter( 'manage_' . $plugin->post_type . '_posts_columns', array($plugin, 'add_custom_columns') );
+            add_action( 'manage_' . $plugin->post_type . '_posts_custom_column', array($plugin, 'add_custom_column_data'), 10, 2 );
+            add_filter( 'manage_edit-' . $plugin->post_type . '_sortable_columns', array($plugin, 'set_sortable_columns') );
         }
 
         /**
@@ -194,9 +197,52 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
         }
 
         /**
+         * Filter admin columns list to add custom fields
+         * @since 1.0.0
+         * @access  public
+         * @param   array   $columns    An array of columns.
+         * @return  array
+         */
+        public function add_custom_columns( $columns ) {
+            $date = $columns['date'];
+            unset( $columns['date'] );
+
+            $columns['iccs_year'] = __( 'Conference Year', 'iccs-schedule' );
+            $columns['date'] = $date;
+
+            return $columns;
+        }
+
+        /**
+         * Add data to the custom columns
+         * @since 1.0.0
+         * @access  public
+         * @param   string  $column_name    The name of the column to display.
+         * @param   int     $post_id        The ID of the current post.
+         */
+        public function add_custom_column_data( $column_name, $post_id ) {
+            if ( $column_name === 'iccs_year' ) {
+                $year = Iccs__Schedule__Utils::sanitize_datetime(get_post_meta($post_id, 'iccs_date', true), 'Y');
+                echo '<a href="' . add_query_arg('iccs_year', $year) . '">' . $year . '</a>';
+            }
+        }
+
+        /**
+         * Add data to the custom columns
+         * @since 1.0.0
+         * @access  public
+         * @param   array   $columns    An array of sortable columns.
+         * @return  array
+         */
+        public function set_sortable_columns( $columns ) {
+            $columns['iccs_year'] = 'iccs_year';
+            return $columns;
+        }
+
+        /**
          * Add year archive rewrite rule
          * @since 1.0.0
-         * @access   public
+         * @access  public
          */
         public function register_year_archive() {
             add_rewrite_rule(
@@ -230,16 +276,25 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
          * @param   WP_Query    $query  The query object
          */
         public function add_year_query( $query ) {
+            if ( $query->get('post_type') !== $this->post_type ) return;
             $year = $query->get('iccs_year');
-            if (!$year) return;
-            $meta_query = $query->get('meta_query', array());
-            $meta_query[] = array(
-                'key'       => 'iccs_date',
-                'value'     => array($year . '-01-01', $year . '-12-31'),
-                'compare'   => 'BETWEEN',
-                'type'      => 'DATE'
-            );
-            $query->set( 'meta_query', $meta_query );
+            $orderby = $query->get( 'orderby');
+            if ($year)  {
+                $meta_query = $query->get('meta_query', array());
+                $meta_query[] = array(
+                    'key'       => 'iccs_date',
+                    'value'     => array($year . '-01-01', $year . '-12-31'),
+                    'compare'   => 'BETWEEN',
+                    'type'      => 'DATE'
+                );
+                $query->set( 'meta_query', $meta_query );
+            }
+
+            if ( is_admin() && $orderby === 'iccs_year' ) {
+                $query->set( 'meta_key', 'iccs_date' );
+                $query->set( 'meta_type', 'DATE' );
+                $query->set( 'orderby', 'meta_value' );
+            }
         }
 
         /**
