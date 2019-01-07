@@ -32,14 +32,6 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
         private $post_type = 'iccs-schedule';
 
         /**
-         * The category taxonomy
-         * @since   1.0.0
-         * @access  private
-         * @var     string  $category       The category taxonomy
-         */
-        private $category = 'iccs-event-year';
-
-        /**
          * The main file of the plugin
          *
          * @since    1.0.0
@@ -138,7 +130,7 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
                 'description'           => __( 'Schedule of Events', 'iccs-schedule' ),
                 'labels'                => $labels,
                 'supports'              => array( 'title' ),
-                'taxonomies'            => array( 'iccs_event_type', $this->category ),
+                'taxonomies'            => array( 'iccs_event_type' ),
                 'hierarchical'          => false,
                 'public'                => true,
                 'show_ui'               => true,
@@ -166,34 +158,14 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
          * @access   public
          */
         function register_taxonomies() {
-            $fyear_labels = array(
-                'name'              => _x('Years', 'taxonomy general name', 'iccs-schedule'),
-                'singular_name'     => _x('Year', 'taxonomy singular name', 'iccs-schedule'),
-                'all_items'         => __('All Years', 'iccs-schedule'),
-                'edit_item'         => __('Edit Year', 'iccs-schedule'),
-                'view_item'         => __('View Year', 'iccs-schedule'),
-                'update_item'       => __('Update Year', 'iccs-schedule'),
-                'add_new_item'      => __('Add New Year', 'iccs-schedule'),
-                'new_item_name'     => __('New Year', 'iccs-schedule'),
-                'search_items'      => __('Search Years', 'iccs-schedule'),
-                'popular_items'     => __('Popular Years', 'iccs-schedule'),
-                'not_found'         => __('No years found', 'iccs-schedule'),
-                'back_to_items'     => __('Back to years', 'iccs-schedule'),
-                'separate_items_with_commas'    => __('Separate years with commas', 'iccs-schedule'),
-                'add_or_remove_items'           => __('Add or remove years', 'iccs-schedule'),
-                'choose_from_most_used'         => __('Choose from the most used years', 'iccs-schedule')
-            );
-            $fyear_args = array(
+            $tag_args = array(
                 'hierarchical'      => true,
                 'show_ui'           => true,
                 'show_admin_column' => true,
-                'labels'            => $fyear_labels,
-                'rewrite'           => array(
-                    'slug'              => $this->slug,
-                    'ep_mask'           => EP_PERMALINK
-                )
+	            'show_in_nav_menus' => false,
+	            'show_tagcloud'     => false,
             );
-            //register_taxonomy( $this->category, $this->post_type, $year_args);
+            register_taxonomy( 'iccs-schedule-tag', $this->post_type, $tag_args);
         }
 
         /**
@@ -208,7 +180,7 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
             unset( $columns['date'] );
 
             $columns['iccs_year'] = __( 'Conference Year', 'iccs-schedule' );
-            $columns['date'] = $date;
+	        $columns['iccs_date'] = __( 'Date', 'iccs-schedule' );
 
             return $columns;
         }
@@ -221,10 +193,20 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
          * @param   int     $post_id        The ID of the current post.
          */
         public function add_custom_column_data( $column_name, $post_id ) {
+        	$start_date = get_post_meta($post_id, 'iccs_start_date', true);
+
             if ( $column_name === 'iccs_year' ) {
-                $year = Iccs__Schedule__Utils::sanitize_datetime(get_post_meta($post_id, 'iccs_date', true), 'Y');
-                echo '<a href="' . add_query_arg('iccs_year', $year) . '">' . $year . '</a>';
+                $year = Iccs__Schedule__Utils::sanitize_datetime($start_date, 'Y');
+                printf('<a href="%s">%s</a>', add_query_arg('iccs_year', $year), $year );
             }
+	        if ( $column_name === 'iccs_date' ) {
+		        $end_date = get_post_meta($post_id, 'iccs_end_date', true);
+		        echo Iccs__Schedule__Utils::sanitize_datetime($start_date, 'm/d/Y') . '<br>';
+		        printf('<small>%s - %s</small>',
+			        Iccs__Schedule__Utils::sanitize_datetime($start_date, 'g:i a'),
+			        Iccs__Schedule__Utils::sanitize_datetime($end_date, 'g:i a')
+		        );
+	        }
         }
 
         /**
@@ -235,7 +217,7 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
          * @return  array
          */
         public function set_sortable_columns( $columns ) {
-            $columns['iccs_year'] = 'iccs_year';
+            $columns['iccs_date'] = 'iccs_year';
             return $columns;
         }
 
@@ -282,7 +264,7 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
             if ($year)  {
                 $meta_query = $query->get('meta_query', array());
                 $meta_query[] = array(
-                    'key'       => 'iccs_date',
+                    'key'       => 'iccs_start_date',
                     'value'     => array($year . '-01-01', $year . '-12-31'),
                     'compare'   => 'BETWEEN',
                     'type'      => 'DATE'
@@ -291,9 +273,9 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
             }
 
             if ( is_admin() && $orderby === 'iccs_year' ) {
-                $query->set( 'meta_key', 'iccs_date' );
-                $query->set( 'meta_type', 'DATE' );
-                $query->set( 'orderby', 'meta_value' );
+                $query->set( 'meta_key', 'iccs_start_date' );
+                $query->set( 'meta_type', 'DATETIME' );
+                $query->set( 'orderby', 'meta_value_datetime' );
             }
         }
 
@@ -306,7 +288,7 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
          * @return  string
          */
         public function add_year_permalink($post_link, $post) {
-            $year = Iccs__Schedule__Utils::sanitize_datetime(get_post_meta($post->ID, 'iccs_date', true), 'Y');
+            $year = Iccs__Schedule__Utils::sanitize_datetime(get_post_meta($post->ID, 'iccs_start_date', true), 'Y');
             if ( $year ){
                 return str_replace( '%iccs_year%' , $year , $post_link );
             }
@@ -347,10 +329,13 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
          */
         public function date_display( $post ) {
             wp_nonce_field( 'iccs_date_nonce', 'iccs_date_nonce' );
+            $start_date = get_post_meta( $post->ID, 'iccs_start_date', true );
+	        $end_date = get_post_meta( $post->ID, 'iccs_end_date', true );
+
             $values = array(
-                'iccs_date'         => get_post_meta( $post->ID, 'iccs_date', true ),
-                'iccs_start_time'   => get_post_meta( $post->ID, 'iccs_start_time', true ),
-                'iccs_end_time'     => get_post_meta( $post->ID, 'iccs_end_time', true ),
+                'iccs_date'         => Iccs__Schedule__Utils::sanitize_date($start_date),
+                'iccs_start_time'   => Iccs__Schedule__Utils::sanitize_time($start_date),
+                'iccs_end_time'     => Iccs__Schedule__Utils::sanitize_time($end_date),
             );
             include $this->plugin_path . 'views/admin/date-box.php';
         }
@@ -372,7 +357,7 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
          * Save meta box content.
          *
          * @param   int     $post_id    Post ID
-         * @param   array   $fields     Associative array of fields (key) and sanitize callback function (value)
+         * @param   array   $fields     Array of fields
          * @since   1.0.0
          * @access   public
          */
@@ -381,10 +366,34 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
             if ( $parent_id = wp_is_post_revision( $post_id ) ) {
                 $post_id = $parent_id;
             }
-            foreach ( $fields as $field => $callback ) {
-                if ( array_key_exists( $field, $_POST ) ) {
-                    update_post_meta( $post_id, $field, call_user_func($callback, $_POST[$field]) );
-                }
+            foreach ( $fields as $field => $args ) {
+	            /**
+	             * Save meta box content.
+	             *
+	             * @param   array               $args['callback']   Sanitize callback function
+	             * @param   string|string[]     $args['fields']     Field(s) to combine
+	             * @param   string|string[]     $args['separator']  Separator between fields (default ' ')
+	             * @since   1.0.0
+	             */
+	            $args = array_merge( array(
+		            'callback'  => function($input){return $input;},
+		            'fields'    => '',
+		            'separator' => ' '
+	            ), $args);
+	            $value = '';
+	            if ( is_array($args['fields']) ) {
+					foreach ($args['fields'] as $input) {
+						if ( array_key_exists( $input, $_POST ) ) {
+							$value .= ($value !== '') ? $args['separator'] : '';
+							$value .= $_POST[$input];
+						}
+					}
+	            } else {
+		            if ( array_key_exists( $args['fields'], $_POST ) ) {
+		            	$value = $_POST[$args['fields']];
+		            }
+	            }
+                update_post_meta( $post_id, $field, call_user_func($args['callback'], $value) );
             }
         }
 
@@ -399,11 +408,16 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
             if ( !isset( $_POST['iccs_date_nonce'] ) ||
                  !wp_verify_nonce( $_POST['iccs_date_nonce'], 'iccs_date_nonce' ) )
                 return;
-            $fields = [
-                'iccs_date'         => 'Iccs__Schedule__Utils::sanitize_date',
-                'iccs_start_time'   => 'Iccs__Schedule__Utils::sanitize_time',
-                'iccs_end_time'     => 'Iccs__Schedule__Utils::sanitize_time'
-            ];
+            $fields = array(
+            	'iccs_start_date'   => array(
+            		'callback'  => 'Iccs__Schedule__Utils::sanitize_datetime',
+		            'fields'    => array('iccs_date', 'iccs_start_time')
+	            ),
+	            'iccs_end_date'     => array(
+		            'callback'  => 'Iccs__Schedule__Utils::sanitize_datetime',
+		            'fields'    => array('iccs_date', 'iccs_end_time')
+	            )
+            );
             $this->save_meta_box($post_id, $fields);
         }
 
@@ -418,9 +432,12 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
             if ( !isset( $_POST['iccs_speakers_nonce']) ||
                  !wp_verify_nonce( $_POST['iccs_speakers_nonce'], 'iccs_speakers_nonce' ) )
                 return;
-            $fields = [
-                'iccs_speakers'     => 'sanitize_textarea_field'
-            ];
+            $fields = array(
+                'iccs_speakers'     => array(
+	                'callback'  => 'sanitize_textarea_field',
+	                'fields'    => 'iccs_speakers'
+                )
+            );
             $this->save_meta_box($post_id, $fields);
         }
     }
