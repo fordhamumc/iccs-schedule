@@ -74,7 +74,10 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
             add_action( 'init', array($plugin, 'create_post_type'), 2 );
             add_action( 'init', array($plugin, 'register_taxonomies') );
             add_action( 'init', array($plugin, 'register_year_archive') );
+	        add_action( 'admin_menu', array( $plugin, 'add_submenu' ) );
+	        add_action( 'admin_init', array( $plugin, 'add_submenu_fields' ) );
             add_action( 'pre_get_posts', array($plugin, 'add_year_query') );
+	        add_action( 'pre_update_option_' . $plugin->post_type . '-settings-year', array($plugin, 'filter_update_settings_year'), 10, 2 );
             add_filter( 'query_vars', array($plugin, 'register_year_vars') );
             add_filter( 'post_type_link', array($plugin, 'add_year_permalink'), 1, 2 );
             add_action( 'add_meta_boxes_' . $plugin->post_type, array($plugin, 'create_meta_boxes') );
@@ -168,6 +171,91 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
             register_taxonomy( 'iccs-schedule-tag', $this->post_type, $tag_args);
         }
 
+	    /**
+	     * Add submenu page to custom post type
+	     * @since 1.0.0
+	     * @access  public
+	     */
+	    public function add_submenu() {
+		    add_submenu_page(
+			    'edit.php?post_type=' . $this->post_type,
+			    __('Schedule Settings', 'iccs-schedule'),
+			    __('Settings', 'iccs-schedule'),
+			    'manage_options',
+			    $this->post_type . '-settings',
+			    array($this, 'settings_display'));
+	    }
+
+	    /**
+	     * Add settings fields
+	     * @since 1.0.0
+	     * @access  public
+	     */
+	    public function add_submenu_fields() {
+		    add_settings_section(
+		    	$this->post_type . '-settings-section',
+			    __('All Settings', 'iccs-schedule'),
+			    null,
+			    $this->post_type . '-settings'
+		    );
+		    register_setting(
+		    	$this->post_type . '-settings-section',
+			    $this->post_type . '-settings-year',
+			    array(
+			    	'type'              => 'integer',
+				    'sanitize_callback' => 'intval',
+				    'default'           => date('Y')
+			    )
+		    );
+		    add_settings_field(
+			    $this->post_type . '-settings-year',
+			    __('Current Schedule Year','iccs-schedule'),
+			    array($this, 'settings_year_display'),
+			    $this->post_type . '-settings',
+			    $this->post_type . '-settings-section',
+			    array(
+			    	'label_for'     => 'iccsSettingsYear'
+			    )
+		    );
+	    }
+
+	    /**
+	     * Settings display callback
+	     * @since 1.0.0
+	     * @access  public
+	     */
+	    public function settings_display() {
+		    include $this->plugin_path . 'views/admin/settings.php';
+	    }
+
+	    /**
+	     * Settings year field callback
+	     * @since 1.0.0
+	     * @access  public
+	     */
+	    public function settings_year_display() {
+	    	$name = $this->post_type . '-settings-year';
+	    	$value = get_option($this->post_type . '-settings-year');
+	    	$options = get_option($this->post_type . '-years');
+		    include $this->plugin_path . 'views/admin/settings-year.php';
+	    }
+
+	    /**
+	     * Filter the year setting before it's updated
+	     * Trigger a rewrite flush if updated.
+	     * @since 1.0.0
+	     * @access  public
+	     * @param   string  $new_value  The new value
+	     * @param   string  $old_value  The old value
+	     * @return  string
+	     */
+	    public function filter_update_settings_year($new_value, $old_value) {
+		    if ( $new_value !== $old_value ) {
+			    add_option( 'iccs_flush_rewrite_rules', true );
+		    }
+			return $new_value;
+	    }
+
         /**
          * Filter admin columns list to add custom fields
          * @since 1.0.0
@@ -227,6 +315,7 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
          * @access  public
          */
         public function register_year_archive() {
+        	$current_year = get_option($this->post_type . '-settings-year');
             add_rewrite_rule(
                 $this->slug . '/([0-9]{4})/?$',
                 'index.php?iccs_year=$matches[1]&post_type=' . $this->post_type,
@@ -234,7 +323,7 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
             );
             add_rewrite_rule(
                 $this->slug . '/?$',
-                'index.php?iccs_year=2019&post_type=' . $this->post_type,
+                'index.php?iccs_year=' . $current_year . '&post_type=' . $this->post_type,
                 'bottom'
             );
         }
@@ -419,6 +508,27 @@ if ( ! class_exists( 'Iccs__Schedule__Admin' ) ) {
 	            )
             );
             $this->save_meta_box($post_id, $fields);
+            if ( array_key_exists( 'iccs_date', $_POST ) ) {
+	            $this->update_year_options($_POST['iccs_date']);
+            }
+        }
+
+	    /**
+	     * Save speakers meta box content.
+	     *
+	     * @param   string     $date    The date for the event
+	     * @since   1.0.0
+	     * @access  private
+	     */
+
+        private function update_year_options($date) {
+	        $year = Iccs__Schedule__Utils::sanitize_datetime($date, 'Y');
+	        $years = get_option($this->post_type . '-years');
+	        if ( $year && !in_array($year, $years) ) {
+	        	$years[] = $year;
+		        sort($years);
+	        	update_option($this->post_type . '-years', $years);
+	        }
         }
 
         /**
